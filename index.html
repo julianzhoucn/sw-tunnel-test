@@ -1,5 +1,72 @@
-<!doctype html><meta name=viewport content="width=device-width"><body style="font:20px sans-serif"><h3>High-priority test: 300 ES-module imports</h3><div id=r>running…</div><script type=module>
-const N=300,t=performance.now(),tag=Date.now();let ok=0,err=0;
-await Promise.all(Array.from({length:N},(_, i)=>import('https://www.httpvshttps.com/check.png?mod'+tag+'_'+i).then(()=>ok++,()=>err++)));
-const ms=Math.round(performance.now()-t);document.getElementById('r').innerHTML='<b style="font-size:40px">'+(ms/1000).toFixed(2)+' s</b><br>'+N+' requests settled';document.title='DONE '+ms;
+<!doctype html>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>SW tunnel test</title>
+<style>
+  body { font: 15px sans-serif; margin: 8px; }
+  #time { font-size: 34px; font-weight: bold; }
+  #grid { display: grid; grid-template-columns: repeat(25, 1fr); gap: 2px; margin: 8px 0; }
+  #grid i { aspect-ratio: 1; background: #ddd; }
+  #grid i.ok { background: #2a9d4b; }
+  #grid i.err { background: #d33; }
+  #wf { width: 100%; border: 1px solid #ccc; }
+  .legend span { display: inline-block; width: 12px; height: 8px; margin: 0 4px 0 10px; }
+  #stats div { margin: 2px 0; }
+</style>
+<h3 style="margin:4px 0">300 same-origin ES modules (High priority)</h3>
+<div id=time>running…</div>
+<div id=stats></div>
+<div id=grid></div>
+<div class=legend>Waterfall (one row per request):<span style="background:#bbb"></span>waiting in browser<span style="background:#1f6fd1"></span>on the network</div>
+<canvas id=wf></canvas>
+<script type=module>
+const N = 300;
+performance.setResourceTimingBufferSize(2000);
+const grid = document.getElementById('grid');
+const cells = Array.from({ length: N }, () => grid.appendChild(document.createElement('i')));
+const tag = Date.now();
+const urls = Array.from({ length: N }, (_, i) => new URL(`./m.js?${tag}_${i}`, location.href).href);
+const t0 = performance.now();
+let ok = 0, err = 0;
+await Promise.all(urls.map((u, i) => import(u).then(
+  () => { ok++; cells[i].className = 'ok'; },
+  () => { err++; cells[i].className = 'err'; })));
+const total = performance.now() - t0;
+document.getElementById('time').textContent = (total / 1000).toFixed(2) + ' s';
+
+// Resource Timing for our 300 requests.
+const byName = new Map(performance.getEntriesByType('resource').map(e => [e.name, e]));
+const rows = urls.map(u => byName.get(u)).filter(Boolean)
+  .map(e => ({ start: e.startTime, sent: e.requestStart || e.startTime, end: e.responseEnd, proto: e.nextHopProtocol || '?' }))
+  .sort((a, b) => a.start - b.start);
+
+// Max requests on the network at once (sent -> response end).
+const ev = [];
+for (const r of rows) { ev.push([r.sent, 1]); ev.push([r.end, -1]); }
+ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+let cur = 0, maxInFlight = 0;
+for (const [, d] of ev) { cur += d; maxInFlight = Math.max(maxInFlight, cur); }
+const waits = rows.map(r => r.sent - r.start).sort((a, b) => a - b);
+const median = a => a.length ? a[Math.floor(a.length / 2)] : NaN;
+const protos = rows.reduce((o, r) => (o[r.proto] = (o[r.proto] || 0) + 1, o), {});
+
+document.getElementById('stats').innerHTML = [
+  `${ok} ok, ${err} failed of ${N}`,
+  `Protocol (browser view): ${Object.entries(protos).map(([k, v]) => `${k} ×${v}`).join(', ')}`,
+  `<b>Max in parallel on the network: ${maxInFlight}</b>`,
+  `Median wait in browser queue: ${Math.round(median(waits))} ms`,
+  `Timing rows captured: ${rows.length}`,
+].map(s => `<div>${s}</div>`).join('');
+
+// Waterfall: x = time since first request, one 2px row per request.
+const cv = document.getElementById('wf');
+const W = cv.clientWidth * devicePixelRatio, rowH = 2 * devicePixelRatio;
+cv.width = W; cv.height = rows.length * rowH; cv.style.height = (rows.length * 2) + 'px';
+const ctx = cv.getContext('2d');
+const tMin = rows.length ? rows[0].start : 0, tMax = Math.max(...rows.map(r => r.end), tMin + 1);
+const x = t => (t - tMin) / (tMax - tMin) * W;
+rows.forEach((r, i) => {
+  ctx.fillStyle = '#bbb'; ctx.fillRect(x(r.start), i * rowH, Math.max(1, x(r.sent) - x(r.start)), rowH);
+  ctx.fillStyle = '#1f6fd1'; ctx.fillRect(x(r.sent), i * rowH, Math.max(1, x(r.end) - x(r.sent)), rowH);
+});
+document.title = 'DONE ' + Math.round(total) + ' inflight ' + maxInFlight;
 </script>

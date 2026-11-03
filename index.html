@@ -1,0 +1,5 @@
+<!doctype html><meta name=viewport content="width=device-width"><body style="font:20px sans-serif"><h3>High-priority test: 300 ES-module imports</h3><div id=r>running…</div><script type=module>
+const N=300,t=performance.now(),tag=Date.now();let ok=0,err=0;
+await Promise.all(Array.from({length:N},(_, i)=>import('https://www.httpvshttps.com/check.png?mod'+tag+'_'+i).then(()=>ok++,()=>err++)));
+const ms=Math.round(performance.now()-t);document.getElementById('r').innerHTML='<b style="font-size:40px">'+(ms/1000).toFixed(2)+' s</b><br>'+N+' requests settled';document.title='DONE '+ms;
+</script>
